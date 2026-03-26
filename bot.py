@@ -75,7 +75,6 @@ def bank_tag(bank_name: str) -> str:
     return "#" + bank_name.lower().replace(" ", "")
 
 # ─────────────── СОСТОЯНИЯ ───────────────
-# Убрано S_ENTRY_DATE (дата поступления)
 (S_FIO, S_CONTRACT_DATE, S_PHONE, S_PACKAGE_COST, S_COURSE,
  S_COST_SOM_SHOW, S_MANAGER, S_CONTRACT, S_CONTRACT_PHOTO,
  S_EXPERT, S_PACKAGE, S_SEMESTER, S_CITY, S_SEMINAR, S_CERT, S_CONFIRM) = range(16)
@@ -86,17 +85,7 @@ MAIN_MENU = 200
 
 # ─────────────── GOOGLE SHEETS ───────────────
 def get_gspread_client():
-    import json
-    sa_json = os.getenv("SERVICE_ACCOUNT_JSON")
-    if sa_json:
-        info = json.loads(sa_json)
-        # Railway иногда экранирует \n → \\n при вставке в переменную.
-        # Восстанавливаем настоящие переносы строк в приватном ключе:
-        if "private_key" in info:
-            info["private_key"] = info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    else:
-        creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return gspread.authorize(creds)
 
 def get_sheet(name: str):
@@ -160,24 +149,28 @@ def append_payment(d: dict):
 # ─────────────── КЛАВИАТУРЫ ───────────────
 def kb(options: list, cols: int = 2, skip: bool = False) -> ReplyKeyboardMarkup:
     rows = [options[i:i+cols] for i in range(0, len(options), cols)]
-    nav = ["Пропустить", "⬅️ Назад"] if skip else ["⬅️ Назад"]
+    nav = ["⏭ Пропустить", "⬅️ Назад"] if skip else ["⬅️ Назад"]
     rows.append(nav + ["❌ Отмена"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 def date_kb(back: bool = True) -> ReplyKeyboardMarkup:
-    row1 = [datetime.now().strftime("%d.%m.%Y")]
+    row1 = [f"📅 {datetime.now().strftime('%d.%m.%Y')}"]
     row2 = ["⬅️ Назад", "❌ Отмена"] if back else ["❌ Отмена"]
     return ReplyKeyboardMarkup([row1, row2], resize_keyboard=True)
 
 def text_kb(back: bool = True, skip: bool = False) -> ReplyKeyboardMarkup:
     row = []
-    if skip: row.append("Пропустить")
+    if skip: row.append("⏭ Пропустить")
     if back: row.append("⬅️ Назад")
     row.append("❌ Отмена")
     return ReplyKeyboardMarkup([row], resize_keyboard=True)
 
 def next_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([["➡️ Далее"], ["⬅️ Назад", "❌ Отмена"]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [["➡️ Далее"],
+         ["⬅️ Назад", "❌ Отмена"]],
+        resize_keyboard=True
+    )
 
 def photo_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -192,7 +185,14 @@ def photo_start_kb() -> ReplyKeyboardMarkup:
         resize_keyboard=True
     )
 
-MAIN_KB = ReplyKeyboardMarkup([["📝 Регистрация студента"], ["💰 Учёт оплаты"]], resize_keyboard=True)
+# ── Главное меню ──
+MAIN_KB = ReplyKeyboardMarkup(
+    [
+        ["📝 Регистрация студента"],
+        ["💰 Учёт оплаты"],
+    ],
+    resize_keyboard=True
+)
 
 # ─────────────── РЕЗЮМЕ В БОТ ───────────────
 def summary_student(d: dict) -> str:
@@ -203,37 +203,47 @@ def summary_student(d: dict) -> str:
     except Exception:
         cost_som = "—"
     cert = d.get("certificate", "")
-    cert_str = f"Сертификат выдан ({cert})" if cert else "Сертификат не выдан"
+    cert_str = f"✅ Сертификат выдан ({cert})" if cert else "❌ Сертификат не выдан"
     n_contract = len(d.get("contract_photo_ids", []))
+    contract_status = d.get("contract", "—")
+    contract_icon = "✅" if contract_status == "Подписан" else "⏳"
     return (
-        "📋 *Регистрация студента*\n\n"
-        f"👤 ФИО: {d.get('fio','—')}\n"
-        f"📅 Дата договора: {d.get('contract_date','—')}\n"
-        f"📞 Телефон: {d.get('phone','—')}\n"
-        f"💵 Стоимость пакета ($): {package_cost}\n"
-        f"📚 Курс: {course}\n"
-        f"💰 Стоимость в сомах: {cost_som}\n"
-        f"👩‍💼 Менеджер: {d.get('manager','—')}\n"
-        f"📝 Договор: {d.get('contract','—')}\n"
-        f"📸 Фото договора: {n_contract} шт.\n"
-        f"🧑‍🏫 Эксперт: {d.get('expert','—')}\n"
-        f"📦 Пакет: {d.get('package','—')}\n"
-        f"🗓 Семестр: {d.get('semester','—')}\n"
-        f"🌆 Город: {d.get('city','—')}\n"
-        f"🎓 Семинар: {d.get('seminar','—') or '—'}\n"
-        f"📜 {cert_str}\n"
+        "┌─────────────────────────\n"
+        "│  📋 *РЕГИСТРАЦИЯ СТУДЕНТА*\n"
+        "└─────────────────────────\n\n"
+        f"👤 *ФИО:* {d.get('fio','—')}\n"
+        f"📅 *Дата договора:* {d.get('contract_date','—')}\n"
+        f"📞 *Телефон:* {d.get('phone','—')}\n\n"
+        "💼 *Пакет и стоимость*\n"
+        f"├ 📦 Пакет: {d.get('package','—')}\n"
+        f"├ 💵 Стоимость: {package_cost}$\n"
+        f"├ 📈 Курс: {course}\n"
+        f"└ 💰 Итого в сомах: {cost_som} с\n\n"
+        "🏫 *Обучение*\n"
+        f"├ 🧑‍🏫 Эксперт: {d.get('expert','—')}\n"
+        f"├ 👩‍💼 Менеджер: {d.get('manager','—')}\n"
+        f"├ 🗓 Семестр: {d.get('semester','—')}\n"
+        f"└ 🌆 Город: {d.get('city','—')}\n\n"
+        "📄 *Документы*\n"
+        f"├ {contract_icon} Договор: {contract_status}\n"
+        f"├ 📸 Фото договора: {n_contract} шт.\n"
+        f"├ 🎓 Семинар: {d.get('seminar','—') or '—'}\n"
+        f"└ {cert_str}\n"
     )
 
 def summary_payment(d: dict) -> str:
     n_receipt = len(d.get("receipt_photo_ids", []))
     return (
-        "💰 *Учёт оплаты*\n\n"
-        f"👤 ФИО: {d.get('fio','—')}\n"
-        f"📅 Дата оплаты: {d.get('date','—')}\n"
-        f"💵 Сумма: {d.get('amount','—')}\n"
-        f"💳 Способ: {d.get('method','—')}\n"
-        f"📝 Примечание: {d.get('note','—') or '—'}\n"
-        f"🧾 Фото чека: {n_receipt} шт.\n"
+        "┌─────────────────────────\n"
+        "│  💰 *УЧЁТ ОПЛАТЫ*\n"
+        "└─────────────────────────\n\n"
+        f"👤 *ФИО:* {d.get('fio','—')}\n"
+        f"📅 *Дата оплаты:* {d.get('date','—')}\n\n"
+        "💳 *Платёж*\n"
+        f"├ 💵 Сумма: {d.get('amount','—')}\n"
+        f"├ 🏦 Способ: {d.get('method','—')}\n"
+        f"├ 📝 Примечание: {d.get('note','—') or '—'}\n"
+        f"└ 🧾 Фото чека: {n_receipt} шт.\n"
     )
 
 # ─────────────── СООБЩЕНИЯ В ГРУППУ ───────────────
@@ -250,7 +260,7 @@ def group_msg_contract(d: dict, sender: str) -> str:
     cert_str = f"Сертификат выдан ({cert})" if cert else "Сертификат не выдан"
 
     lines = [
-        sender,          # уже содержит имя + ссылку на профиль
+        sender,
         "#новыйчек",
         "",
         d.get("fio", ""),
@@ -271,8 +281,8 @@ def group_msg_contract(d: dict, sender: str) -> str:
 
 def group_msg_receipt(d: dict, sender: str) -> str:
     lines = [
-        sender,          # уже содержит имя + ссылку на профиль
-        "#оплата",
+        sender,
+        "#остаток",
         bank_tag(d.get("method", "")),
         "",
         d.get("fio", ""),
@@ -285,18 +295,14 @@ def group_msg_receipt(d: dict, sender: str) -> str:
     return "\n".join(lines)
 
 def sender_display(user) -> str:
-    """Возвращает строку с именем и кликабельной ссылкой на профиль пользователя."""
     full_name = " ".join(filter(None, [user.first_name, user.last_name]))
     if user.username:
-        # Кликабельная ссылка через t.me
         return f'<a href="https://t.me/{user.username}">{full_name} (@{user.username})</a>'
     else:
-        # Если нет username — ссылка через tg://user?id=
         return f'<a href="tg://user?id={user.id}">{full_name}</a>'
 
 # ─────────────── ОТПРАВКА МЕДИАГРУППЫ ───────────────
 async def send_photo_group(bot, chat_id: int, photo_ids: list, caption: str):
-    """Отправляет одно фото или медиагруппу с подписью на первом фото (HTML)."""
     if not photo_ids:
         return
     if len(photo_ids) == 1:
@@ -312,7 +318,7 @@ async def check_access(update: Update) -> bool:
     user_id = update.effective_user.id
     if not is_allowed(user_id):
         await update.message.reply_text(
-            "⛔ У вас нет доступа к этому боту.\n"
+            "⛔ *Нет доступа*\n\n"
             f"Ваш ID: <code>{user_id}</code>\n"
             "Передайте его администратору.",
             parse_mode="HTML"
@@ -325,12 +331,22 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update):
         return ConversationHandler.END
     ctx.user_data.clear()
-    await update.message.reply_text("🏢 *Отдел продаж* — выберите действие:", parse_mode="Markdown", reply_markup=MAIN_KB)
+    name = update.effective_user.first_name or "👋"
+    await update.message.reply_text(
+        f"Привет, *{name}!* 👋\n\n"
+        "🏢 *Отдел продаж* — выберите действие:",
+        parse_mode="Markdown",
+        reply_markup=MAIN_KB
+    )
     return MAIN_MENU
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
-    await update.message.reply_text("❌ Отменено.", reply_markup=MAIN_KB)
+    await update.message.reply_text(
+        "❌ *Действие отменено.*\n\nВыберите действие из меню.",
+        parse_mode="Markdown",
+        reply_markup=MAIN_KB
+    )
     return MAIN_MENU
 
 async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -339,11 +355,22 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     t = update.message.text
     if t == "📝 Регистрация студента":
         ctx.user_data["s"] = {}
-        await update.message.reply_text("👤 Введите *ФИО* студента:", parse_mode="Markdown", reply_markup=text_kb(back=False))
+        await update.message.reply_text(
+            "📝 *Регистрация нового студента*\n\n"
+            "Шаг 1️⃣ из 1️⃣4️⃣\n"
+            "👤 Введите *ФИО* студента полностью:",
+            parse_mode="Markdown",
+            reply_markup=text_kb(back=False)
+        )
         return S_FIO
     if t == "💰 Учёт оплаты":
         ctx.user_data["p"] = {}
-        await update.message.reply_text("🔍 Введите имя студента для поиска:", reply_markup=text_kb(back=False))
+        await update.message.reply_text(
+            "💰 *Учёт оплаты*\n\n"
+            "🔍 Введите имя студента для поиска:",
+            parse_mode="Markdown",
+            reply_markup=text_kb(back=False)
+        )
         return P_SEARCH
     await update.message.reply_text("Выберите действие из меню.", reply_markup=MAIN_KB)
     return MAIN_MENU
@@ -353,54 +380,100 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════
 async def s_fio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["s"]["fio"] = update.message.text
-    await update.message.reply_text("📅 Дата *заключения договора*:", parse_mode="Markdown", reply_markup=date_kb(back=False))
+    await update.message.reply_text(
+        "Шаг 2️⃣ из 1️⃣4️⃣\n"
+        "📅 Введите дату *заключения договора*\n"
+        "или нажмите кнопку с сегодняшней датой:",
+        parse_mode="Markdown",
+        reply_markup=date_kb(back=False)
+    )
     return S_CONTRACT_DATE
 
 async def s_contract_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("👤 ФИО:", reply_markup=text_kb(back=False))
+    t = update.message.text
+    if t == "⬅️ Назад":
+        await update.message.reply_text(
+            "Шаг 1️⃣ из 1️⃣4️⃣\n👤 Введите *ФИО* студента полностью:",
+            parse_mode="Markdown", reply_markup=text_kb(back=False)
+        )
         return S_FIO
-    ctx.user_data["s"]["contract_date"] = update.message.text
-    # Дата поступления убрана — сразу переходим к телефону
-    await update.message.reply_text("📞 Номер *телефона*:", parse_mode="Markdown", reply_markup=text_kb())
+    # Убираем префикс даты если нажали кнопку
+    ctx.user_data["s"]["contract_date"] = t.replace("📅 ", "")
+    await update.message.reply_text(
+        "Шаг 3️⃣ из 1️⃣4️⃣\n"
+        "📞 Введите *номер телефона* студента:",
+        parse_mode="Markdown",
+        reply_markup=text_kb()
+    )
     return S_PHONE
 
 async def s_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📅 Дата договора:", reply_markup=date_kb(back=False))
+        await update.message.reply_text(
+            "Шаг 2️⃣ из 1️⃣4️⃣\n📅 Дата заключения договора:",
+            parse_mode="Markdown", reply_markup=date_kb(back=False)
+        )
         return S_CONTRACT_DATE
     ctx.user_data["s"]["phone"] = update.message.text
-    await update.message.reply_text("💵 Стоимость пакета *($)*:", parse_mode="Markdown", reply_markup=text_kb())
+    await update.message.reply_text(
+        "Шаг 4️⃣ из 1️⃣4️⃣\n"
+        "💵 Введите *стоимость пакета* в долларах ($):",
+        parse_mode="Markdown",
+        reply_markup=text_kb()
+    )
     return S_PACKAGE_COST
 
 async def s_package_cost(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📞 Телефон:", reply_markup=text_kb())
+        await update.message.reply_text(
+            "Шаг 3️⃣ из 1️⃣4️⃣\n📞 Номер телефона:",
+            parse_mode="Markdown", reply_markup=text_kb()
+        )
         return S_PHONE
     ctx.user_data["s"]["package_cost"] = update.message.text
-    await update.message.reply_text("📚 *Курс* (например: 103.2):", parse_mode="Markdown", reply_markup=text_kb())
+    await update.message.reply_text(
+        "Шаг 5️⃣ из 1️⃣4️⃣\n"
+        "📈 Введите *курс* (например: 103.2):",
+        parse_mode="Markdown",
+        reply_markup=text_kb()
+    )
     return S_COURSE
 
 async def s_course(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💵 Стоимость пакета ($):", reply_markup=text_kb())
+        await update.message.reply_text(
+            "Шаг 4️⃣ из 1️⃣4️⃣\n💵 Стоимость пакета ($):",
+            parse_mode="Markdown", reply_markup=text_kb()
+        )
         return S_PACKAGE_COST
     ctx.user_data["s"]["course"] = update.message.text
     package_cost = ctx.user_data["s"].get("package_cost", "")
     course = update.message.text
     try:
         cost_som = f"{int(float(package_cost) * float(course)):,}".replace(",", " ")
-        msg = f"💰 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
+        msg = (
+            "💰 *Расчёт стоимости*\n\n"
+            f"📌 {package_cost}$ × {course} = *{cost_som} сом*\n\n"
+            "Нажмите ➡️ *Далее* чтобы продолжить."
+        )
     except Exception:
-        msg = "💰 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
+        msg = "⚠️ Не удалось рассчитать стоимость.\n\nНажмите ➡️ *Далее* чтобы продолжить."
     await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=next_kb())
     return S_COST_SOM_SHOW
 
 async def s_cost_som_show(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📚 Курс:", reply_markup=text_kb())
+        await update.message.reply_text(
+            "Шаг 5️⃣ из 1️⃣4️⃣\n📈 Курс:",
+            parse_mode="Markdown", reply_markup=text_kb()
+        )
         return S_COURSE
-    await update.message.reply_text("👩‍💼 Выберите *менеджера*:", parse_mode="Markdown", reply_markup=kb(MANAGERS, 1))
+    await update.message.reply_text(
+        "Шаг 6️⃣ из 1️⃣4️⃣\n"
+        "👩‍💼 Выберите *менеджера*:",
+        parse_mode="Markdown",
+        reply_markup=kb(MANAGERS, 1)
+    )
     return S_MANAGER
 
 async def s_manager(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -409,24 +482,38 @@ async def s_manager(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         course = ctx.user_data["s"].get("course", "")
         try:
             cost_som = f"{int(float(package_cost) * float(course)):,}".replace(",", " ")
-            msg = f"💰 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
+            msg = (
+                "💰 *Расчёт стоимости*\n\n"
+                f"📌 {package_cost}$ × {course} = *{cost_som} сом*\n\n"
+                "Нажмите ➡️ *Далее* чтобы продолжить."
+            )
         except Exception:
-            msg = "💰 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
+            msg = "⚠️ Не удалось рассчитать стоимость.\n\nНажмите ➡️ *Далее* чтобы продолжить."
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=next_kb())
         return S_COST_SOM_SHOW
     ctx.user_data["s"]["manager"] = update.message.text
-    await update.message.reply_text("📝 Статус *договора*:", parse_mode="Markdown", reply_markup=kb(CONTRACT_STATUSES, 2))
+    await update.message.reply_text(
+        "Шаг 7️⃣ из 1️⃣4️⃣\n"
+        "📝 Выберите статус *договора*:",
+        parse_mode="Markdown",
+        reply_markup=kb(CONTRACT_STATUSES, 2)
+    )
     return S_CONTRACT
 
 async def s_contract(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("👩‍💼 Менеджер:", reply_markup=kb(MANAGERS, 1))
+        await update.message.reply_text(
+            "Шаг 6️⃣ из 1️⃣4️⃣\n👩‍💼 Выберите менеджера:",
+            parse_mode="Markdown", reply_markup=kb(MANAGERS, 1)
+        )
         return S_MANAGER
     ctx.user_data["s"]["contract"] = update.message.text
     ctx.user_data["s"]["contract_photo_ids"] = []
     await update.message.reply_text(
-        "📸 Отправьте *фото договора*.\n"
-        "Можно отправить несколько фото по одному.\n"
+        "Шаг 8️⃣ из 1️⃣4️⃣\n"
+        "📸 *Фото договора*\n\n"
+        "Отправляйте фото по одному.\n"
+        "Можно прикрепить несколько.\n"
         "Когда закончите — нажмите *✅ Готово, продолжить*.",
         parse_mode="Markdown",
         reply_markup=photo_start_kb()
@@ -436,18 +523,25 @@ async def s_contract(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         ctx.user_data["s"]["contract_photo_ids"] = []
-        await update.message.reply_text("📝 Статус договора:", reply_markup=kb(CONTRACT_STATUSES, 2))
+        await update.message.reply_text(
+            "Шаг 7️⃣ из 1️⃣4️⃣\n📝 Статус договора:",
+            parse_mode="Markdown", reply_markup=kb(CONTRACT_STATUSES, 2)
+        )
         return S_CONTRACT
 
     if update.message.text == "✅ Готово, продолжить":
         ids = ctx.user_data["s"].get("contract_photo_ids", [])
         if not ids:
             await update.message.reply_text(
-                "⚠️ Вы ещё не отправили ни одного фото. Пожалуйста, отправьте хотя бы одно.",
+                "⚠️ Отправьте хотя бы одно фото договора.",
                 reply_markup=photo_start_kb()
             )
             return S_CONTRACT_PHOTO
-        await update.message.reply_text("🧑‍🏫 Выберите *эксперта*:", parse_mode="Markdown", reply_markup=kb(EXPERTS, 1))
+        await update.message.reply_text(
+            "Шаг 9️⃣ из 1️⃣4️⃣\n"
+            "🧑‍🏫 Выберите *эксперта*:",
+            parse_mode="Markdown", reply_markup=kb(EXPERTS, 1)
+        )
         return S_EXPERT
 
     if update.message.photo:
@@ -455,14 +549,15 @@ async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ids.append(update.message.photo[-1].file_id)
         count = len(ids)
         await update.message.reply_text(
-            f"✅ Фото {count} принято. Отправьте ещё или нажмите *✅ Готово, продолжить*.",
+            f"✅ Фото *{count}* принято!\n"
+            "Отправьте ещё или нажмите *✅ Готово, продолжить*.",
             parse_mode="Markdown",
             reply_markup=photo_kb()
         )
         return S_CONTRACT_PHOTO
 
     await update.message.reply_text(
-        "⚠️ Отправьте фото (не файл) или нажмите *✅ Готово, продолжить*.",
+        "⚠️ Пожалуйста, отправьте *фото* (не файл).",
         parse_mode="Markdown",
         reply_markup=photo_kb() if ctx.user_data["s"].get("contract_photo_ids") else photo_start_kb()
     )
@@ -471,67 +566,111 @@ async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def s_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         await update.message.reply_text(
-            "📸 Отправьте фото договора или нажмите *✅ Готово, продолжить*:",
+            "Шаг 8️⃣ из 1️⃣4️⃣\n📸 Фото договора:",
             parse_mode="Markdown",
             reply_markup=photo_kb() if ctx.user_data["s"].get("contract_photo_ids") else photo_start_kb()
         )
         return S_CONTRACT_PHOTO
     ctx.user_data["s"]["expert"] = update.message.text
-    await update.message.reply_text("📦 Выберите *пакет*:", parse_mode="Markdown", reply_markup=kb(PACKAGES, 2))
+    await update.message.reply_text(
+        "Шаг 🔟 из 1️⃣4️⃣\n"
+        "📦 Выберите *пакет*:",
+        parse_mode="Markdown", reply_markup=kb(PACKAGES, 2)
+    )
     return S_PACKAGE
 
 async def s_package(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("🧑‍🏫 Эксперт:", reply_markup=kb(EXPERTS, 1))
+        await update.message.reply_text(
+            "Шаг 9️⃣ из 1️⃣4️⃣\n🧑‍🏫 Выберите эксперта:",
+            parse_mode="Markdown", reply_markup=kb(EXPERTS, 1)
+        )
         return S_EXPERT
     ctx.user_data["s"]["package"] = update.message.text
-    await update.message.reply_text("🗓 Выберите *семестр*:", parse_mode="Markdown", reply_markup=kb(SEMESTERS, 2))
+    await update.message.reply_text(
+        "Шаг 1️⃣1️⃣ из 1️⃣4️⃣\n"
+        "🗓 Выберите *семестр*:",
+        parse_mode="Markdown", reply_markup=kb(SEMESTERS, 2)
+    )
     return S_SEMESTER
 
 async def s_semester(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📦 Пакет:", reply_markup=kb(PACKAGES, 2))
+        await update.message.reply_text(
+            "Шаг 🔟 из 1️⃣4️⃣\n📦 Выберите пакет:",
+            parse_mode="Markdown", reply_markup=kb(PACKAGES, 2)
+        )
         return S_PACKAGE
     ctx.user_data["s"]["semester"] = update.message.text
-    await update.message.reply_text("🌆 *Город* проживания:", parse_mode="Markdown", reply_markup=kb(CITIES, 2))
+    await update.message.reply_text(
+        "Шаг 1️⃣2️⃣ из 1️⃣4️⃣\n"
+        "🌆 Выберите *город* проживания:",
+        parse_mode="Markdown", reply_markup=kb(CITIES, 2)
+    )
     return S_CITY
 
 async def s_city(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("🗓 Семестр:", reply_markup=kb(SEMESTERS, 2))
+        await update.message.reply_text(
+            "Шаг 1️⃣1️⃣ из 1️⃣4️⃣\n🗓 Выберите семестр:",
+            parse_mode="Markdown", reply_markup=kb(SEMESTERS, 2)
+        )
         return S_SEMESTER
     ctx.user_data["s"]["city"] = update.message.text
-    await update.message.reply_text("🎓 *Семинар* (или Пропустить):", parse_mode="Markdown", reply_markup=kb(SEMINARS, 1, skip=True))
+    await update.message.reply_text(
+        "Шаг 1️⃣3️⃣ из 1️⃣4️⃣\n"
+        "🎓 Выберите *семинар* (или пропустите):",
+        parse_mode="Markdown", reply_markup=kb(SEMINARS, 1, skip=True)
+    )
     return S_SEMINAR
 
 async def s_seminar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("🌆 Город:", reply_markup=kb(CITIES, 2))
+        await update.message.reply_text(
+            "Шаг 1️⃣2️⃣ из 1️⃣4️⃣\n🌆 Выберите город:",
+            parse_mode="Markdown", reply_markup=kb(CITIES, 2)
+        )
         return S_CITY
-    ctx.user_data["s"]["seminar"] = "" if update.message.text == "Пропустить" else update.message.text
-    await update.message.reply_text("📜 *Сертификат* (или Пропустить):", parse_mode="Markdown", reply_markup=kb(CERTIFICATES, 2, skip=True))
+    ctx.user_data["s"]["seminar"] = "" if update.message.text == "⏭ Пропустить" else update.message.text
+    await update.message.reply_text(
+        "Шаг 1️⃣4️⃣ из 1️⃣4️⃣\n"
+        "📜 Выберите *сертификат* (или пропустите):",
+        parse_mode="Markdown", reply_markup=kb(CERTIFICATES, 2, skip=True)
+    )
     return S_CERT
 
 async def s_cert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("🎓 Семинар:", reply_markup=kb(SEMINARS, 1, skip=True))
+        await update.message.reply_text(
+            "Шаг 1️⃣3️⃣ из 1️⃣4️⃣\n🎓 Выберите семинар:",
+            parse_mode="Markdown", reply_markup=kb(SEMINARS, 1, skip=True)
+        )
         return S_SEMINAR
-    ctx.user_data["s"]["certificate"] = "" if update.message.text == "Пропустить" else update.message.text
+    ctx.user_data["s"]["certificate"] = "" if update.message.text == "⏭ Пропустить" else update.message.text
     await update.message.reply_text(
-        summary_student(ctx.user_data["s"]) + "\n✅ Сохранить в таблицу?",
+        summary_student(ctx.user_data["s"]) + "\n\n*Всё верно? Сохранить в таблицу?*",
         parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup([["✅ Сохранить", "⬅️ Назад"], ["❌ Отмена"]], resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup(
+            [["✅ Сохранить"], ["⬅️ Назад", "❌ Отмена"]],
+            resize_keyboard=True
+        )
     )
     return S_CONFIRM
 
 async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📜 Сертификат:", reply_markup=kb(CERTIFICATES, 2, skip=True))
+        await update.message.reply_text(
+            "Шаг 1️⃣4️⃣ из 1️⃣4️⃣\n📜 Выберите сертификат:",
+            parse_mode="Markdown", reply_markup=kb(CERTIFICATES, 2, skip=True)
+        )
         return S_CERT
     if update.message.text == "✅ Сохранить":
         try:
             append_student(ctx.user_data["s"])
-            await update.message.reply_text("✅ *Студент добавлен!*", parse_mode="Markdown")
+            await update.message.reply_text(
+                "🎉 *Студент успешно добавлен!*\n\nПереходим к учёту оплаты...",
+                parse_mode="Markdown"
+            )
         except Exception as e:
             logger.error(f"Ошибка записи студента: {e}", exc_info=True)
             await update.message.reply_text(f"❌ Ошибка:\n<code>{e}</code>", parse_mode="HTML", reply_markup=MAIN_KB)
@@ -553,7 +692,9 @@ async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.clear()
         ctx.user_data["p"] = {"fio": fio}
         await update.message.reply_text(
-            f"💰 Теперь внесите *оплату* для студента *{fio}*.\n\n📅 Дата оплаты:",
+            f"💰 *Учёт оплаты*\n\n"
+            f"👤 Студент: *{fio}*\n\n"
+            f"Шаг 1️⃣ из 4️⃣\n📅 Введите дату оплаты:",
             parse_mode="Markdown",
             reply_markup=date_kb(back=False)
         )
@@ -569,14 +710,17 @@ async def p_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     matches = [name for name in all_names if query in name.lower()]
     if not matches:
         await update.message.reply_text(
-            f"😔 Студентов с именем «{update.message.text}» не найдено.\nПопробуйте ещё раз:",
+            f"😔 По запросу «*{update.message.text}*» ничего не найдено.\n\n"
+            "Попробуйте ввести имя ещё раз:",
+            parse_mode="Markdown",
             reply_markup=text_kb(back=False)
         )
         return P_SEARCH
     ctx.user_data["p_matches"] = matches
     rows = [[name] for name in matches[:20]] + [["🔍 Новый поиск", "❌ Отмена"]]
     await update.message.reply_text(
-        f"🔎 Найдено {len(matches)} студент(ов). Выберите нужного:",
+        f"🔎 Найдено *{len(matches)}* студент(ов).\nВыберите нужного:",
+        parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True)
     )
     return P_SELECT
@@ -584,54 +728,82 @@ async def p_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def p_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     t = update.message.text
     if t == "🔍 Новый поиск":
-        await update.message.reply_text("🔍 Введите имя студента для поиска:", reply_markup=text_kb(back=False))
+        await update.message.reply_text(
+            "🔍 Введите имя студента для поиска:",
+            reply_markup=text_kb(back=False)
+        )
         return P_SEARCH
     matches = ctx.user_data.get("p_matches", [])
     if t not in matches:
         rows = [[name] for name in matches[:20]] + [["🔍 Новый поиск", "❌ Отмена"]]
-        await update.message.reply_text("Пожалуйста, выберите студента из списка.",
-                                        reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True))
+        await update.message.reply_text(
+            "⚠️ Пожалуйста, выберите студента из списка.",
+            reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True)
+        )
         return P_SELECT
     ctx.user_data["p"]["fio"] = t
     await update.message.reply_text(
-        f"✅ Выбран: *{t}*\n\n📅 Дата *оплаты*:",
+        f"✅ Выбран: *{t}*\n\n"
+        "Шаг 1️⃣ из 4️⃣\n📅 Введите дату оплаты:",
         parse_mode="Markdown", reply_markup=date_kb(back=False)
     )
     return P_DATE
 
 async def p_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("🔍 Введите имя студента для поиска:", reply_markup=text_kb(back=False))
+        await update.message.reply_text(
+            "🔍 Введите имя студента для поиска:",
+            reply_markup=text_kb(back=False)
+        )
         return P_SEARCH
-    ctx.user_data["p"]["date"] = update.message.text
-    await update.message.reply_text("💵 *Сумма* оплаты:", parse_mode="Markdown", reply_markup=text_kb())
+    ctx.user_data["p"]["date"] = update.message.text.replace("📅 ", "")
+    await update.message.reply_text(
+        "Шаг 2️⃣ из 4️⃣\n💵 Введите *сумму* оплаты:",
+        parse_mode="Markdown", reply_markup=text_kb()
+    )
     return P_AMOUNT
 
 async def p_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("📅 Дата оплаты:", reply_markup=date_kb(back=False))
+        await update.message.reply_text(
+            "Шаг 1️⃣ из 4️⃣\n📅 Дата оплаты:",
+            parse_mode="Markdown", reply_markup=date_kb(back=False)
+        )
         return P_DATE
     ctx.user_data["p"]["amount"] = update.message.text
-    await update.message.reply_text("💳 *Способ* оплаты:", parse_mode="Markdown", reply_markup=kb(ACCOUNTS, 2))
+    await update.message.reply_text(
+        "Шаг 3️⃣ из 4️⃣\n🏦 Выберите *способ* оплаты:",
+        parse_mode="Markdown", reply_markup=kb(ACCOUNTS, 2)
+    )
     return P_METHOD
 
 async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💵 Сумма:", reply_markup=text_kb())
+        await update.message.reply_text(
+            "Шаг 2️⃣ из 4️⃣\n💵 Сумма оплаты:",
+            parse_mode="Markdown", reply_markup=text_kb()
+        )
         return P_AMOUNT
     ctx.user_data["p"]["method"] = update.message.text
-    await update.message.reply_text("📝 Примечание (или Пропустить):", reply_markup=text_kb(skip=True))
+    await update.message.reply_text(
+        "Шаг 4️⃣ из 4️⃣\n📝 Добавьте *примечание* (или пропустите):",
+        parse_mode="Markdown", reply_markup=text_kb(skip=True)
+    )
     return P_NOTE
 
 async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
+        await update.message.reply_text(
+            "Шаг 3️⃣ из 4️⃣\n🏦 Способ оплаты:",
+            parse_mode="Markdown", reply_markup=kb(ACCOUNTS, 2)
+        )
         return P_METHOD
-    ctx.user_data["p"]["note"] = "" if update.message.text == "Пропустить" else update.message.text
+    ctx.user_data["p"]["note"] = "" if update.message.text == "⏭ Пропустить" else update.message.text
     ctx.user_data["p"]["receipt_photo_ids"] = []
     await update.message.reply_text(
-        "🧾 Отправьте *фото чека*.\n"
-        "Можно отправить несколько фото по одному.\n"
+        "🧾 *Фото чека*\n\n"
+        "Отправляйте фото по одному.\n"
+        "Можно прикрепить несколько.\n"
         "Когда закончите — нажмите *✅ Готово, продолжить*.",
         parse_mode="Markdown",
         reply_markup=photo_start_kb()
@@ -641,21 +813,27 @@ async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def p_receipt_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         ctx.user_data["p"]["receipt_photo_ids"] = []
-        await update.message.reply_text("📝 Примечание:", reply_markup=text_kb(skip=True))
+        await update.message.reply_text(
+            "Шаг 4️⃣ из 4️⃣\n📝 Примечание:",
+            parse_mode="Markdown", reply_markup=text_kb(skip=True)
+        )
         return P_NOTE
 
     if update.message.text == "✅ Готово, продолжить":
         ids = ctx.user_data["p"].get("receipt_photo_ids", [])
         if not ids:
             await update.message.reply_text(
-                "⚠️ Вы ещё не отправили ни одного фото. Пожалуйста, отправьте хотя бы одно.",
+                "⚠️ Отправьте хотя бы одно фото чека.",
                 reply_markup=photo_start_kb()
             )
             return P_RECEIPT_PHOTO
         await update.message.reply_text(
-            summary_payment(ctx.user_data["p"]) + "\n✅ Сохранить в таблицу?",
+            summary_payment(ctx.user_data["p"]) + "\n\n*Всё верно? Сохранить в таблицу?*",
             parse_mode="Markdown",
-            reply_markup=ReplyKeyboardMarkup([["✅ Сохранить", "⬅️ Назад"], ["❌ Отмена"]], resize_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup(
+                [["✅ Сохранить"], ["⬅️ Назад", "❌ Отмена"]],
+                resize_keyboard=True
+            )
         )
         return P_CONFIRM
 
@@ -664,14 +842,15 @@ async def p_receipt_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ids.append(update.message.photo[-1].file_id)
         count = len(ids)
         await update.message.reply_text(
-            f"✅ Фото {count} принято. Отправьте ещё или нажмите *✅ Готово, продолжить*.",
+            f"✅ Фото *{count}* принято!\n"
+            "Отправьте ещё или нажмите *✅ Готово, продолжить*.",
             parse_mode="Markdown",
             reply_markup=photo_kb()
         )
         return P_RECEIPT_PHOTO
 
     await update.message.reply_text(
-        "⚠️ Отправьте фото (не файл) или нажмите *✅ Готово, продолжить*.",
+        "⚠️ Пожалуйста, отправьте *фото* (не файл).",
         parse_mode="Markdown",
         reply_markup=photo_kb() if ctx.user_data["p"].get("receipt_photo_ids") else photo_start_kb()
     )
@@ -680,7 +859,7 @@ async def p_receipt_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         await update.message.reply_text(
-            "🧾 Отправьте фото чека или нажмите *✅ Готово, продолжить*:",
+            "🧾 Фото чека:",
             parse_mode="Markdown",
             reply_markup=photo_kb() if ctx.user_data["p"].get("receipt_photo_ids") else photo_start_kb()
         )
@@ -689,7 +868,10 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "✅ Сохранить":
         try:
             append_payment(ctx.user_data["p"])
-            await update.message.reply_text("✅ *Оплата добавлена в таблицу!*", parse_mode="Markdown", reply_markup=MAIN_KB)
+            await update.message.reply_text(
+                "🎉 *Оплата успешно добавлена в таблицу!*",
+                parse_mode="Markdown", reply_markup=MAIN_KB
+            )
         except Exception as e:
             logger.error(f"Ошибка записи оплаты: {e}", exc_info=True)
             await update.message.reply_text(f"❌ Ошибка:\n<code>{e}</code>", parse_mode="HTML", reply_markup=MAIN_KB)
