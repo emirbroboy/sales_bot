@@ -272,7 +272,7 @@ def group_msg_contract(d: dict, sender: str) -> str:
 def group_msg_receipt(d: dict, sender: str) -> str:
     lines = [
         sender,          # уже содержит имя + ссылку на профиль
-        "#остаток",
+        "#оплата",
         bank_tag(d.get("method", "")),
         "",
         d.get("fio", ""),
