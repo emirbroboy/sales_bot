@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime
 
-from telegram import Update, ReplyKeyboardMarkup, InputMediaPhoto
+from telegram import Update, ReplyKeyboardMarkup, InputMediaPhoto, BotCommand
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ConversationHandler,
     filters, ContextTypes
@@ -32,8 +32,6 @@ SHEET_STUDENTS = "Регистрация студентов"
 SHEET_PAYMENTS = "Учет оплат"
 
 # ─────────────── БЕЛЫЙ СПИСОК ───────────────
-# Добавляйте Telegram user_id сюда вручную.
-# Узнать свой ID можно у @userinfobot
 _raw_ids = os.getenv("ALLOWED_USER_IDS", "")
 ALLOWED_USER_IDS = [int(i.strip()) for i in _raw_ids.split(",") if i.strip().isdigit()]
 
@@ -75,7 +73,6 @@ def bank_tag(bank_name: str) -> str:
     return "#" + bank_name.lower().replace(" ", "")
 
 # ─────────────── СОСТОЯНИЯ ───────────────
-# Убрано S_ENTRY_DATE (дата поступления)
 (S_FIO, S_CONTRACT_DATE, S_PHONE, S_PACKAGE_COST, S_COURSE,
  S_COST_SOM_SHOW, S_MANAGER, S_CONTRACT, S_CONTRACT_PHOTO,
  S_EXPERT, S_PACKAGE, S_SEMESTER, S_CITY, S_SEMINAR, S_CERT, S_CONFIRM) = range(16)
@@ -101,6 +98,31 @@ def get_all_students():
         return names
     except Exception as e:
         logger.error(f"Ошибка получения студентов: {e}")
+        return []
+
+def get_payment_history(fio: str) -> list:
+    """
+    Читает лист 'Учет оплат' и возвращает все предыдущие оплаты студента.
+    Колонки листа: [0] ФИО, [1] Дата, [2] Сумма, [3] Способ, [4] Примечание
+    Возвращает список словарей: {date, amount, method}
+    """
+    try:
+        sheet = get_sheet(SHEET_PAYMENTS)
+        records = sheet.get_all_values()
+        history = []
+        for row in records[1:]:  # пропускаем заголовок
+            if not row:
+                continue
+            row_fio = row[0].strip() if len(row) > 0 else ""
+            if row_fio.lower() == fio.strip().lower():
+                history.append({
+                    "date":   row[1].strip() if len(row) > 1 else "—",
+                    "amount": row[2].strip() if len(row) > 2 else "—",
+                    "method": row[3].strip() if len(row) > 3 else "—",
+                })
+        return history
+    except Exception as e:
+        logger.error(f"Ошибка получения истории оплат для {fio}: {e}")
         return []
 
 def append_student(d: dict):
@@ -240,7 +262,7 @@ def group_msg_contract(d: dict, sender: str) -> str:
     cert_str = f"Сертификат выдан ({cert})" if cert else "Сертификат не выдан"
 
     lines = [
-        sender,          # уже содержит имя + ссылку на профиль
+        sender,
         "#новыйчек",
         "",
         d.get("fio", ""),
@@ -259,29 +281,56 @@ def group_msg_contract(d: dict, sender: str) -> str:
     lines.append(cert_str)
     return "\n".join(lines)
 
-def group_msg_receipt(d: dict, sender: str) -> str:
+def group_msg_receipt(d: dict, sender: str, history: list) -> str:
+    """
+    Формирует сообщение об оплате для группы.
+    history — список предыдущих оплат (без текущей): [{date, amount, method}, ...]
+    Текущая оплата добавляется в конец истории при отображении.
+    """
+    fio            = d.get("fio", "")
+    current_date   = d.get("date", "")
+    current_amount = d.get("amount", "")
+    current_method = d.get("method", "")
+    note           = d.get("note", "")
+
     lines = [
-        sender,          # уже содержит имя + ссылку на профиль
+        sender,
         "#оплата",
-        bank_tag(d.get("method", "")),
+        bank_tag(current_method),
         "",
-        d.get("fio", ""),
-        f"Сумма: {d.get('amount', '')}",
-        f"Способ: {d.get('method', '')}",
-        f"Дата: {d.get('date', '')}",
+        f"<b>{fio}</b>",
+        f"Сумма: {current_amount}",
+        f"Способ: {current_method}",
+        f"Дата: {current_date}",
     ]
-    if d.get("note"):
-        lines.append(f"Примечание: {d.get('note')}")
+    if note:
+        lines.append(f"Примечание: {note}")
+
+    # ── История всех оплат (предыдущие + текущая) ──────────────────
+    lines.append("")
+    lines.append("📋 <b>История оплат:</b>")
+
+    all_payments = history + [{
+        "date":   current_date,
+        "amount": current_amount,
+        "method": current_method,
+    }]
+
+    for i, rec in enumerate(all_payments, start=1):
+        # Последняя запись — текущая, помечаем её стрелкой
+        marker = " ◀️ новая" if i == len(all_payments) else ""
+        lines.append(f"  {i}. {rec['date']} — {rec['amount']} ({rec['method']}){marker}")
+
+    lines.append(f"\nВсего платежей: {len(all_payments)}")
+
     return "\n".join(lines)
 
 def sender_display(user) -> str:
     """Возвращает строку с именем и кликабельной ссылкой на профиль пользователя."""
     full_name = " ".join(filter(None, [user.first_name, user.last_name]))
     if user.username:
-        # Кликабельная ссылка через t.me
         return f'<a href="https://t.me/{user.username}">{full_name} (@{user.username})</a>'
     else:
-        # Если нет username — ссылка через tg://user?id=
         return f'<a href="tg://user?id={user.id}">{full_name}</a>'
 
 # ─────────────── ОТПРАВКА МЕДИАГРУППЫ ───────────────
@@ -309,6 +358,35 @@ async def check_access(update: Update) -> bool:
         )
         return False
     return True
+
+# ─────────────── КОМАНДЫ ───────────────
+async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await check_access(update):
+        return
+    text = (
+        "📖 <b>Доступные команды:</b>\n\n"
+        "/start — 🏢 Главное меню (перезапустить бота)\n"
+        "/new_student — 📝 Регистрация нового студента\n"
+        "/new_payment — 💰 Внести оплату студента\n"
+        "/cancel — ❌ Отменить текущее действие\n"
+        "/help — 📖 Показать этот список команд\n\n"
+        "Или используйте кнопки меню 👇"
+    )
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=MAIN_KB)
+
+async def cmd_new_student(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await check_access(update):
+        return ConversationHandler.END
+    ctx.user_data["s"] = {}
+    await update.message.reply_text("👤 Введите *ФИО* студента:", parse_mode="Markdown", reply_markup=text_kb(back=False))
+    return S_FIO
+
+async def cmd_new_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await check_access(update):
+        return ConversationHandler.END
+    ctx.user_data["p"] = {}
+    await update.message.reply_text("🔍 Введите имя студента для поиска:", reply_markup=text_kb(back=False))
+    return P_SEARCH
 
 # ─────────────── СТАРТ / ОТМЕНА ───────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -351,7 +429,6 @@ async def s_contract_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👤 ФИО:", reply_markup=text_kb(back=False))
         return S_FIO
     ctx.user_data["s"]["contract_date"] = update.message.text
-    # Дата поступления убрана — сразу переходим к телефону
     await update.message.reply_text("📞 Номер *телефона*:", parse_mode="Markdown", reply_markup=text_kb())
     return S_PHONE
 
@@ -677,6 +754,11 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return P_RECEIPT_PHOTO
 
     if update.message.text == "✅ Сохранить":
+        fio = ctx.user_data["p"].get("fio", "")
+
+        # ── Читаем историю предыдущих оплат ДО записи текущей ──────
+        history = get_payment_history(fio)
+
         try:
             append_payment(ctx.user_data["p"])
             await update.message.reply_text("✅ *Оплата добавлена в таблицу!*", parse_mode="Markdown", reply_markup=MAIN_KB)
@@ -686,11 +768,12 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.clear()
             return MAIN_MENU
 
-        # Отправляем фото чека в группу
+        # ── Отправляем чек в группу с полной историей оплат ────────
         photo_ids = ctx.user_data["p"].get("receipt_photo_ids", [])
         if photo_ids:
             sender = sender_display(update.message.from_user)
-            caption = group_msg_receipt(ctx.user_data["p"], sender)
+            # history — предыдущие оплаты; текущая добавляется внутри group_msg_receipt
+            caption = group_msg_receipt(ctx.user_data["p"], sender, history)
             try:
                 await send_photo_group(update.get_bot(), GROUP_CHAT_ID, photo_ids, caption)
             except Exception as e:
@@ -700,13 +783,28 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return MAIN_MENU
     return P_CONFIRM
 
+# ─────────────── РЕГИСТРАЦИЯ КОМАНД В МЕНЮ TELEGRAM ───────────────
+async def post_init(app: Application):
+    """Устанавливает список команд, который отображается при нажатии / в Telegram."""
+    await app.bot.set_my_commands([
+        BotCommand("start",       "🏢 Главное меню"),
+        BotCommand("new_student", "📝 Регистрация студента"),
+        BotCommand("new_payment", "💰 Внести оплату"),
+        BotCommand("cancel",      "❌ Отменить текущее действие"),
+        BotCommand("help",        "📖 Список команд"),
+    ])
+
 # ─────────────── ЗАПУСК ───────────────
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     CANCEL = MessageHandler(filters.Regex("^❌ Отмена$"), cancel)
 
     conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start",       start),
+            CommandHandler("new_student", cmd_new_student),
+            CommandHandler("new_payment", cmd_new_payment),
+        ],
         states={
             MAIN_MENU: [
                 MessageHandler(filters.Regex("^📝 Регистрация студента$"), main_menu),
@@ -737,10 +835,19 @@ def main():
             P_RECEIPT_PHOTO:  [CANCEL, MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, p_receipt_photo)],
             P_CONFIRM:        [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_confirm)],
         },
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start), CANCEL],
+        fallbacks=[
+            CommandHandler("cancel",      cancel),
+            CommandHandler("start",       start),
+            CommandHandler("help",        cmd_help),
+            CommandHandler("new_student", cmd_new_student),
+            CommandHandler("new_payment", cmd_new_payment),
+            CANCEL,
+        ],
     )
 
     app.add_handler(conv)
+    app.add_handler(CommandHandler("help", cmd_help))  # доступен и вне диалога
+
     logger.info("Бот запущен!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
