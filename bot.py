@@ -79,7 +79,8 @@ def bank_tag(bank_name: str) -> str:
  S_COST_SOM_SHOW, S_MANAGER, S_CONTRACT, S_CONTRACT_PHOTO,
  S_EXPERT, S_PACKAGE, S_SEMESTER, S_CITY, S_SEMINAR, S_CERT, S_CONFIRM) = range(16)
 
-(P_SEARCH, P_SELECT, P_DATE, P_AMOUNT, P_METHOD, P_NOTE, P_RECEIPT_PHOTO, P_CONFIRM) = range(100, 108)
+# P_EXPERT добавлен между P_METHOD и P_NOTE
+(P_SEARCH, P_SELECT, P_DATE, P_AMOUNT, P_METHOD, P_EXPERT, P_NOTE, P_RECEIPT_PHOTO, P_CONFIRM) = range(100, 109)
 
 MAIN_MENU = 200
 
@@ -187,7 +188,7 @@ def append_payment(d: dict):
         d.get("method", ""),
         d.get("note", ""),
         "",   # Дата договора — формула
-        "",   # Эксперт — формула
+        d.get("expert", ""),  # Эксперт — теперь заполняется из бота
         "",   # Пакет — формула
     ]
     sheet.append_row(row, value_input_option="USER_ENTERED")
@@ -264,6 +265,7 @@ def summary_payment(d: dict) -> str:
     return (
         "💰 *Учёт оплаты*\n\n"
         f"👤 ФИО: {d.get('fio','—')}\n"
+        f"🧑‍🏫 Эксперт: {d.get('expert','—')}\n"
         f"📅 Дата оплаты: {d.get('date','—')}\n"
         f"💵 Сумма: {d.get('amount','—')}\n"
         f"💳 Способ: {d.get('method','—')}\n"
@@ -316,6 +318,7 @@ def group_msg_receipt(d: dict, sender: str, history: list) -> str:
         bank_tag(d.get("method", "")),
         "",
         d.get("fio", ""),
+        f"Эксперт: {d.get('expert', '—')}",
         f"Сумма: {d.get('amount', '')}",
         f"Способ: {d.get('method', '')}",
         f"Дата: {d.get('date', '')}",
@@ -668,8 +671,9 @@ async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Автоматический переход к учёту оплаты
         fio = ctx.user_data["s"].get("fio", "")
+        expert = ctx.user_data["s"].get("expert", "")
         ctx.user_data.clear()
-        ctx.user_data["p"] = {"fio": fio}
+        ctx.user_data["p"] = {"fio": fio, "expert": expert}
         await update.message.reply_text(
             f"💰 Теперь внесите *оплату* для студента *{fio}*.\n\n📅 Дата оплаты:",
             parse_mode="Markdown",
@@ -755,6 +759,25 @@ async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("💵 Сумма:", reply_markup=text_kb())
         return P_AMOUNT
     ctx.user_data["p"]["method"] = update.message.text
+    # Если эксперт уже передан из регистрации — пропускаем выбор
+    if ctx.user_data["p"].get("expert"):
+        await update.message.reply_text(
+            "📝 Примечание (или Пропустить):",
+            reply_markup=text_kb(skip=True)
+        )
+        return P_NOTE
+    await update.message.reply_text(
+        "🧑‍🏫 Выберите *эксперта*:",
+        parse_mode="Markdown",
+        reply_markup=kb(EXPERTS, 1)
+    )
+    return P_EXPERT
+
+async def p_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "⬅️ Назад":
+        await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
+        return P_METHOD
+    ctx.user_data["p"]["expert"] = update.message.text
     await update.message.reply_text(
         "📝 Примечание (или Пропустить):",
         reply_markup=text_kb(skip=True)
@@ -763,8 +786,13 @@ async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
-        return P_METHOD
+        # Если эксперт был передан из регистрации — назад на способ оплаты
+        # Если выбирали эксперта вручную — назад на выбор эксперта
+        if ctx.user_data["p"].get("_expert_from_reg"):
+            await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
+            return P_METHOD
+        await update.message.reply_text("🧑‍🏫 Эксперт:", reply_markup=kb(EXPERTS, 1))
+        return P_EXPERT
     ctx.user_data["p"]["note"] = "" if update.message.text == "Пропустить" else update.message.text
     ctx.user_data["p"]["receipt_photo_ids"] = []
     await update.message.reply_text(
@@ -872,7 +900,6 @@ def main():
     conv = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
-            # Позволяем запускать бота кнопками меню даже вне диалога
             MessageHandler(filters.Regex("^📝 Регистрация студента$"), main_menu),
             MessageHandler(filters.Regex("^💰 Учёт оплаты$"), main_menu),
         ],
@@ -902,6 +929,7 @@ def main():
             P_DATE:           [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_date)],
             P_AMOUNT:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_amount)],
             P_METHOD:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_method)],
+            P_EXPERT:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_expert)],
             P_NOTE:           [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_note)],
             P_RECEIPT_PHOTO:  [CANCEL, MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, p_receipt_photo)],
             P_CONFIRM:        [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_confirm)],
@@ -911,7 +939,6 @@ def main():
             CommandHandler("start", start),
             CANCEL,
         ],
-        # Разрешаем перезапуск диалога командой /start из любого состояния
         allow_reentry=True,
     )
 
