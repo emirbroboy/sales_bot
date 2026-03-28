@@ -245,7 +245,7 @@ def summary_student(d: dict) -> str:
         f"📅 Дата договора: {d.get('contract_date','—')}\n"
         f"📞 Телефон: {d.get('phone','—')}\n"
         f"💲 Стоимость пакета ($): {package_cost}\n"
-        f"📚 Курс: {course}\n"
+        f"💲 Курс валют: {course}\n"
         f"💲 Стоимость в сомах: {cost_som}\n"
         f"👩‍💼 Менеджер: {d.get('manager','—')}\n"
         f"📝 Договор: {d.get('contract','—')}\n"
