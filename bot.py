@@ -79,7 +79,6 @@ def bank_tag(bank_name: str) -> str:
  S_COST_SOM_SHOW, S_MANAGER, S_CONTRACT, S_CONTRACT_PHOTO,
  S_EXPERT, S_PACKAGE, S_SEMESTER, S_CITY, S_SEMINAR, S_CERT, S_CONFIRM) = range(16)
 
-# P_EXPERT добавлен между P_METHOD и P_NOTE
 (P_SEARCH, P_SELECT, P_DATE, P_AMOUNT, P_METHOD, P_EXPERT, P_NOTE, P_RECEIPT_PHOTO, P_CONFIRM) = range(100, 109)
 
 MAIN_MENU = 200
@@ -127,11 +126,6 @@ def get_all_students():
         return []
 
 def get_student_payment_history(fio: str) -> list:
-    """
-    Возвращает список прошлых платежей студента из листа "Учет оплат".
-    Каждый платёж — dict с ключами: date, amount, method.
-    Столбцы: A=ФИО, B=Дата, C=Сумма, D=Способ оплаты
-    """
     try:
         sheet = get_sheet(SHEET_PAYMENTS)
         records = sheet.get_all_values()
@@ -188,7 +182,7 @@ def append_payment(d: dict):
         d.get("method", ""),
         d.get("note", ""),
         "",   # Дата договора — формула
-        d.get("expert", ""),  # Эксперт — теперь заполняется из бота
+        "",   # Эксперт — не записывается в таблицу, только в сообщение группы
         "",   # Пакет — формула
     ]
     sheet.append_row(row, value_input_option="USER_ENTERED")
@@ -307,11 +301,6 @@ def group_msg_contract(d: dict, sender: str) -> str:
     return "\n".join(lines)
 
 def group_msg_receipt(d: dict, sender: str, history: list) -> str:
-    """
-    Формирует сообщение о платеже для группы.
-    history — список прошлых платежей (уже сохранённых в таблице, без текущего).
-    Показывает историю последних платежей снизу.
-    """
     lines = [
         sender,
         "#остаток",
@@ -326,7 +315,6 @@ def group_msg_receipt(d: dict, sender: str, history: list) -> str:
     if d.get("note"):
         lines.append(f"Примечание: {d.get('note')}")
 
-    # История платежей (все предыдущие, без текущего)
     if history:
         lines.append("")
         lines.append("📋 История платежей:")
@@ -335,7 +323,6 @@ def group_msg_receipt(d: dict, sender: str, history: list) -> str:
             amount_str = p.get("amount", "—")
             method_str = p.get("method", "—")
             lines.append(f"  • {date_str} — {amount_str} ({method_str})")
-        # Текущий платёж как последний в истории
         lines.append(
             f"  • {d.get('date', '—')} — {d.get('amount', '—')} ({d.get('method', '—')}) ✅ новый"
         )
@@ -659,7 +646,6 @@ async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.clear()
             return MAIN_MENU
 
-        # Отправляем фото договора в группу
         photo_ids = ctx.user_data["s"].get("contract_photo_ids", [])
         if photo_ids:
             sender = sender_display(update.message.from_user)
@@ -669,7 +655,6 @@ async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Ошибка отправки договора в группу: {e}", exc_info=True)
 
-        # Автоматический переход к учёту оплаты
         fio = ctx.user_data["s"].get("fio", "")
         expert = ctx.user_data["s"].get("expert", "")
         ctx.user_data.clear()
@@ -761,6 +746,7 @@ async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["p"]["method"] = update.message.text
     # Если эксперт уже передан из регистрации — пропускаем выбор
     if ctx.user_data["p"].get("expert"):
+        ctx.user_data["p"]["_expert_from_reg"] = True
         await update.message.reply_text(
             "📝 Примечание (или Пропустить):",
             reply_markup=text_kb(skip=True)
@@ -786,8 +772,6 @@ async def p_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        # Если эксперт был передан из регистрации — назад на способ оплаты
-        # Если выбирали эксперта вручную — назад на выбор эксперта
         if ctx.user_data["p"].get("_expert_from_reg"):
             await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
             return P_METHOD
@@ -878,7 +862,6 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.clear()
             return MAIN_MENU
 
-        # Отправляем фото чека в группу с историей платежей
         photo_ids = ctx.user_data["p"].get("receipt_photo_ids", [])
         if photo_ids:
             sender = sender_display(update.message.from_user)
