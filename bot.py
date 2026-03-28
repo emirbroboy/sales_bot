@@ -62,10 +62,10 @@ ACCOUNTS = [
     "Наличка доллар", "Наличка сом", "О Бизнес", "О Деньги",
     "Оптима Бизнес", "Оптима доллар", "Оптима сом"
 ]
-SEMESTERS    = ["Зима 26", "Весна 26", "Лето 26", "Осень 26", "Осень 27", "Зима27", "Осень 25"]
-CITIES       = ["Бишкек", "ОШ", "Нарын", "Ыссык кол", "Баткен", "Чуй", "Джалала-абад", "Талас", "Рф"]
-SEMINARS     = ["Семинар", "Не семинар", "акция малазия март 26"]
-CERTIFICATES = ["3 мес", "1 мес инд"]
+SEMESTERS         = ["Зима 26", "Весна 26", "Лето 26", "Осень 26", "Осень 27", "Зима27", "Осень 25"]
+CITIES            = ["Бишкек", "ОШ", "Нарын", "Ыссык кол", "Баткен", "Чуй", "Джалала-абад", "Талас", "Рф"]
+SEMINARS          = ["Семинар", "Не семинар", "акция малазия март 26"]
+CERTIFICATES      = ["3 мес", "1 мес инд"]
 CONTRACT_STATUSES = ["Подписан", "Не подписан"]
 
 # ─────────────── ТЕГИ БАНКОВ ───────────────
@@ -79,7 +79,8 @@ def bank_tag(bank_name: str) -> str:
  S_COST_SOM_SHOW, S_MANAGER, S_CONTRACT, S_CONTRACT_PHOTO,
  S_EXPERT, S_PACKAGE, S_SEMESTER, S_CITY, S_SEMINAR, S_CERT, S_CONFIRM) = range(16)
 
-(P_SEARCH, P_SELECT, P_DATE, P_AMOUNT, P_METHOD, P_EXPERT, P_NOTE, P_RECEIPT_PHOTO, P_CONFIRM) = range(100, 109)
+# P_RATE — новый шаг «курс» между P_METHOD и P_EXPERT
+(P_SEARCH, P_SELECT, P_DATE, P_AMOUNT, P_METHOD, P_RATE, P_EXPERT, P_NOTE, P_RECEIPT_PHOTO, P_CONFIRM) = range(100, 110)
 
 MAIN_MENU = 200
 
@@ -148,22 +149,22 @@ def append_student(d: dict):
     row = [
         d.get("fio", ""),
         d.get("contract_date", ""),
-        "",   # Дата поступления — убрана
+        "",                       # Дата поступления — убрана
         d.get("phone", ""),
         d.get("package_cost", ""),
         d.get("course", ""),
-        "",   # Стоимость в сомах — формула
-        "",   # Оплата в сомах — из учёта оплаты
-        "",   # Остаток в долларах
-        "",   # Остаток в сомах
-        "",   # 87.5
-        "",   # Факт с вычетом комиссии
-        "",   # Проценты банков
-        "",   # Банк — из учёта оплаты
-        "",   # Банк 2
+        "",                       # Стоимость в сомах — формула
+        "",                       # Оплата в сомах — из учёта оплаты
+        "",                       # Остаток в долларах
+        "",                       # Остаток в сомах
+        "",                       # 87.5
+        "",                       # Факт с вычетом комиссии
+        "",                       # Проценты банков
+        "",                       # Банк — из учёта оплаты
+        "",                       # Банк 2
         d.get("manager", ""),
         d.get("contract", ""),
-        "",   # Статус
+        "",                       # Статус
         d.get("expert", ""),
         d.get("package", ""),
         d.get("semester", ""),
@@ -217,8 +218,10 @@ def photo_kb() -> ReplyKeyboardMarkup:
     )
 
 def photo_start_kb() -> ReplyKeyboardMarkup:
+    """Клавиатура до первого фото — с кнопкой Пропустить."""
     return ReplyKeyboardMarkup(
-        [["⬅️ Назад", "❌ Отмена"]],
+        [["Пропустить"],
+         ["⬅️ Назад", "❌ Отмена"]],
         resize_keyboard=True
     )
 
@@ -235,17 +238,18 @@ def summary_student(d: dict) -> str:
     cert = d.get("certificate", "")
     cert_str = f"Сертификат выдан ({cert})" if cert else "Сертификат не выдан"
     n_contract = len(d.get("contract_photo_ids", []))
+    photo_str = f"{n_contract} шт." if n_contract else "не прикреплено"
     return (
         "📋 *Регистрация студента*\n\n"
         f"👤 ФИО: {d.get('fio','—')}\n"
         f"📅 Дата договора: {d.get('contract_date','—')}\n"
         f"📞 Телефон: {d.get('phone','—')}\n"
-        f"💵 Стоимость пакета ($): {package_cost}\n"
+        f"💲 Стоимость пакета ($): {package_cost}\n"
         f"📚 Курс: {course}\n"
-        f"💰 Стоимость в сомах: {cost_som}\n"
+        f"💲 Стоимость в сомах: {cost_som}\n"
         f"👩‍💼 Менеджер: {d.get('manager','—')}\n"
         f"📝 Договор: {d.get('contract','—')}\n"
-        f"📸 Фото договора: {n_contract} шт.\n"
+        f"📸 Фото договора: {photo_str}\n"
         f"🧑‍🏫 Эксперт: {d.get('expert','—')}\n"
         f"📦 Пакет: {d.get('package','—')}\n"
         f"🗓 Семестр: {d.get('semester','—')}\n"
@@ -259,10 +263,11 @@ def summary_payment(d: dict) -> str:
     return (
         "💰 *Учёт оплаты*\n\n"
         f"👤 ФИО: {d.get('fio','—')}\n"
-        f"🧑‍🏫 Эксперт: {d.get('expert','—')}\n"
+        f"🧑‍💼 Принимает оплату: {d.get('expert','—')}\n"
         f"📅 Дата оплаты: {d.get('date','—')}\n"
-        f"💵 Сумма: {d.get('amount','—')}\n"
+        f"💲 Сумма: {d.get('amount','—')}\n"
         f"💳 Способ: {d.get('method','—')}\n"
+        f"📈 Курс: {d.get('rate','—')}\n"
         f"📝 Примечание: {d.get('note','—') or '—'}\n"
         f"🧾 Фото чека: {n_receipt} шт.\n"
     )
@@ -307,9 +312,10 @@ def group_msg_receipt(d: dict, sender: str, history: list) -> str:
         bank_tag(d.get("method", "")),
         "",
         d.get("fio", ""),
-        f"Эксперт: {d.get('expert', '—')}",
+        f"Принимает оплату: {d.get('expert', '—')}",
         f"Сумма: {d.get('amount', '')}",
         f"Способ: {d.get('method', '')}",
+        f"Курс: {d.get('rate', '—')}",
         f"Дата: {d.get('date', '')}",
     ]
     if d.get("note"):
@@ -432,7 +438,7 @@ async def s_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return S_CONTRACT_DATE
     ctx.user_data["s"]["phone"] = update.message.text
     await update.message.reply_text(
-        "💵 Стоимость пакета *($)*:",
+        "💲 Стоимость пакета *($)*:",
         parse_mode="Markdown",
         reply_markup=text_kb()
     )
@@ -452,16 +458,16 @@ async def s_package_cost(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def s_course(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💵 Стоимость пакета ($):", reply_markup=text_kb())
+        await update.message.reply_text("💲 Стоимость пакета ($):", reply_markup=text_kb())
         return S_PACKAGE_COST
     ctx.user_data["s"]["course"] = update.message.text
     package_cost = ctx.user_data["s"].get("package_cost", "")
     course = update.message.text
     try:
         cost_som = f"{int(float(package_cost) * float(course)):,}".replace(",", " ")
-        msg = f"💰 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
+        msg = f"💲 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
     except Exception:
-        msg = "💰 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
+        msg = "💲 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
     await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=next_kb())
     return S_COST_SOM_SHOW
 
@@ -482,9 +488,9 @@ async def s_manager(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         course = ctx.user_data["s"].get("course", "")
         try:
             cost_som = f"{int(float(package_cost) * float(course)):,}".replace(",", " ")
-            msg = f"💰 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
+            msg = f"💲 Стоимость в сомах: *{cost_som} сом*\n\nНажмите ➡️ Далее чтобы продолжить."
         except Exception:
-            msg = "💰 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
+            msg = "💲 Стоимость в сомах: не удалось рассчитать.\n\nНажмите ➡️ Далее чтобы продолжить."
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=next_kb())
         return S_COST_SOM_SHOW
     ctx.user_data["s"]["manager"] = update.message.text
@@ -504,23 +510,38 @@ async def s_contract(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📸 Отправьте *фото договора*.\n"
         "Можно отправить несколько фото по одному.\n"
-        "Когда закончите — нажмите *✅ Готово, продолжить*.",
+        "Когда закончите — нажмите *✅ Готово, продолжить*.\n"
+        "Или нажмите *Пропустить*, если фото нет.",
         parse_mode="Markdown",
         reply_markup=photo_start_kb()
     )
     return S_CONTRACT_PHOTO
 
 async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
+    text = update.message.text if update.message.text else ""
+
+    if text == "⬅️ Назад":
         ctx.user_data["s"]["contract_photo_ids"] = []
         await update.message.reply_text("📝 Статус договора:", reply_markup=kb(CONTRACT_STATUSES, 2))
         return S_CONTRACT
 
-    if update.message.text == "✅ Готово, продолжить":
+    # Пропустить — только до первого фото
+    if text == "Пропустить":
+        ctx.user_data["s"]["contract_photo_ids"] = []
+        await update.message.reply_text(
+            "🧑‍🏫 Выберите *эксперта*:",
+            parse_mode="Markdown",
+            reply_markup=kb(EXPERTS, 1)
+        )
+        return S_EXPERT
+
+    if text == "✅ Готово, продолжить":
         ids = ctx.user_data["s"].get("contract_photo_ids", [])
         if not ids:
             await update.message.reply_text(
-                "⚠️ Вы ещё не отправили ни одного фото. Пожалуйста, отправьте хотя бы одно.",
+                "⚠️ Вы ещё не отправили ни одного фото.\n"
+                "Отправьте фото или нажмите *Пропустить*.",
+                parse_mode="Markdown",
                 reply_markup=photo_start_kb()
             )
             return S_CONTRACT_PHOTO
@@ -543,7 +564,7 @@ async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return S_CONTRACT_PHOTO
 
     await update.message.reply_text(
-        "⚠️ Отправьте фото (не файл) или нажмите *✅ Готово, продолжить*.",
+        "⚠️ Отправьте фото (не файл), нажмите *✅ Готово, продолжить* или *Пропустить*.",
         parse_mode="Markdown",
         reply_markup=photo_kb() if ctx.user_data["s"].get("contract_photo_ids") else photo_start_kb()
     )
@@ -552,7 +573,7 @@ async def s_contract_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def s_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         await update.message.reply_text(
-            "📸 Отправьте фото договора или нажмите *✅ Готово, продолжить*:",
+            "📸 Отправьте фото договора, нажмите *✅ Готово, продолжить* или *Пропустить*:",
             parse_mode="Markdown",
             reply_markup=photo_kb() if ctx.user_data["s"].get("contract_photo_ids") else photo_start_kb()
         )
@@ -654,8 +675,18 @@ async def s_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await send_photo_group(update.get_bot(), GROUP_CHAT_ID, photo_ids, caption)
             except Exception as e:
                 logger.error(f"Ошибка отправки договора в группу: {e}", exc_info=True)
+        else:
+            # Фото нет — отправляем текстом
+            sender = sender_display(update.message.from_user)
+            caption = group_msg_contract(ctx.user_data["s"], sender)
+            try:
+                await update.get_bot().send_message(
+                    chat_id=GROUP_CHAT_ID, text=caption, parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки договора (текст) в группу: {e}", exc_info=True)
 
-        fio = ctx.user_data["s"].get("fio", "")
+        fio    = ctx.user_data["s"].get("fio", "")
         expert = ctx.user_data["s"].get("expert", "")
         ctx.user_data.clear()
         ctx.user_data["p"] = {"fio": fio, "expert": expert}
@@ -721,7 +752,7 @@ async def p_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return P_SEARCH
     ctx.user_data["p"]["date"] = update.message.text
     await update.message.reply_text(
-        "💵 *Сумма* оплаты:",
+        "💲 *Сумма* оплаты:",
         parse_mode="Markdown",
         reply_markup=text_kb()
     )
@@ -741,9 +772,21 @@ async def p_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💵 Сумма:", reply_markup=text_kb())
+        await update.message.reply_text("💲 Сумма:", reply_markup=text_kb())
         return P_AMOUNT
     ctx.user_data["p"]["method"] = update.message.text
+    await update.message.reply_text(
+        "📈 Введите *курс* валюты (например: 103.5):",
+        parse_mode="Markdown",
+        reply_markup=text_kb()
+    )
+    return P_RATE
+
+async def p_rate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "⬅️ Назад":
+        await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
+        return P_METHOD
+    ctx.user_data["p"]["rate"] = update.message.text
     # Если эксперт уже передан из регистрации — пропускаем выбор
     if ctx.user_data["p"].get("expert"):
         ctx.user_data["p"]["_expert_from_reg"] = True
@@ -753,7 +796,7 @@ async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return P_NOTE
     await update.message.reply_text(
-        "🧑‍🏫 Выберите *эксперта*:",
+        "🧑‍💼 Кто *принимает оплату*?",
         parse_mode="Markdown",
         reply_markup=kb(EXPERTS, 1)
     )
@@ -761,8 +804,10 @@ async def p_method(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def p_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
-        await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
-        return P_METHOD
+        await update.message.reply_text(
+            "📈 Курс валюты:", reply_markup=text_kb()
+        )
+        return P_RATE
     ctx.user_data["p"]["expert"] = update.message.text
     await update.message.reply_text(
         "📝 Примечание (или Пропустить):",
@@ -773,9 +818,9 @@ async def p_expert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "⬅️ Назад":
         if ctx.user_data["p"].get("_expert_from_reg"):
-            await update.message.reply_text("💳 Способ оплаты:", reply_markup=kb(ACCOUNTS, 2))
-            return P_METHOD
-        await update.message.reply_text("🧑‍🏫 Эксперт:", reply_markup=kb(EXPERTS, 1))
+            await update.message.reply_text("📈 Курс валюты:", reply_markup=text_kb())
+            return P_RATE
+        await update.message.reply_text("🧑‍💼 Кто принимает оплату:", reply_markup=kb(EXPERTS, 1))
         return P_EXPERT
     ctx.user_data["p"]["note"] = "" if update.message.text == "Пропустить" else update.message.text
     ctx.user_data["p"]["receipt_photo_ids"] = []
@@ -789,16 +834,33 @@ async def p_note(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return P_RECEIPT_PHOTO
 
 async def p_receipt_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
+    text = update.message.text if update.message.text else ""
+
+    if text == "⬅️ Назад":
         ctx.user_data["p"]["receipt_photo_ids"] = []
         await update.message.reply_text("📝 Примечание:", reply_markup=text_kb(skip=True))
         return P_NOTE
 
-    if update.message.text == "✅ Готово, продолжить":
+    # Пропустить — только до первого фото
+    if text == "Пропустить":
+        ctx.user_data["p"]["receipt_photo_ids"] = []
+        await update.message.reply_text(
+            summary_payment(ctx.user_data["p"]) + "\n✅ Сохранить в таблицу?",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(
+                [["✅ Сохранить", "⬅️ Назад"], ["❌ Отмена"]],
+                resize_keyboard=True
+            )
+        )
+        return P_CONFIRM
+
+    if text == "✅ Готово, продолжить":
         ids = ctx.user_data["p"].get("receipt_photo_ids", [])
         if not ids:
             await update.message.reply_text(
-                "⚠️ Вы ещё не отправили ни одного фото. Пожалуйста, отправьте хотя бы одно.",
+                "⚠️ Вы ещё не отправили ни одного фото.\n"
+                "Отправьте фото или нажмите *Пропустить*.",
+                parse_mode="Markdown",
                 reply_markup=photo_start_kb()
             )
             return P_RECEIPT_PHOTO
@@ -841,8 +903,6 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if update.message.text == "✅ Сохранить":
         fio = ctx.user_data["p"].get("fio", "")
-
-        # Читаем историю ДО записи нового платежа
         history = get_student_payment_history(fio)
 
         try:
@@ -862,14 +922,18 @@ async def p_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data.clear()
             return MAIN_MENU
 
+        sender = sender_display(update.message.from_user)
+        caption = group_msg_receipt(ctx.user_data["p"], sender, history)
         photo_ids = ctx.user_data["p"].get("receipt_photo_ids", [])
-        if photo_ids:
-            sender = sender_display(update.message.from_user)
-            caption = group_msg_receipt(ctx.user_data["p"], sender, history)
-            try:
+        try:
+            if photo_ids:
                 await send_photo_group(update.get_bot(), GROUP_CHAT_ID, photo_ids, caption)
-            except Exception as e:
-                logger.error(f"Ошибка отправки чека в группу: {e}", exc_info=True)
+            else:
+                await update.get_bot().send_message(
+                    chat_id=GROUP_CHAT_ID, text=caption, parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка отправки чека в группу: {e}", exc_info=True)
 
         ctx.user_data.clear()
         return MAIN_MENU
@@ -912,6 +976,7 @@ def main():
             P_DATE:           [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_date)],
             P_AMOUNT:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_amount)],
             P_METHOD:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_method)],
+            P_RATE:           [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_rate)],
             P_EXPERT:         [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_expert)],
             P_NOTE:           [CANCEL, MessageHandler(filters.TEXT & ~filters.COMMAND, p_note)],
             P_RECEIPT_PHOTO:  [CANCEL, MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, p_receipt_photo)],
